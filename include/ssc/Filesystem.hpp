@@ -6,6 +6,7 @@
 
 extern "C" {
 #include <dirent.h>
+#include <ftw.h>
 #include <sys/stat.h>
 }
 
@@ -30,6 +31,23 @@ namespace fs {
     inline void createDirectory(const std::string& directory) {
         if (::mkdir(directory.c_str(), S_IRWXU) == -1) {
             throw Exception("Failed to create directory: ", std::strerror(errno));
+        }
+    }
+
+    inline void removeDirectory(const std::string& directory) {
+        if (directory == "." || directory == ".." || directory == "/") {
+            throw Exception("Refusing to remove directory ", directory);
+        }
+
+        auto unlinkCallback = [](const char* fpath, const struct stat* sb, int typeFlag, struct FTW* ftwBuf) {
+            (void)sb;
+            (void)typeFlag;
+            (void)ftwBuf;
+            return remove(fpath);
+        };
+
+        if (nftw(directory.c_str(), unlinkCallback, 64, FTW_DEPTH | FTW_PHYS) == -1) {
+            throw Exception("Failed to remove directory ", directory, ":", std::strerror(errno));
         }
     }
 

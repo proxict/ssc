@@ -40,7 +40,17 @@ public:
 
         const std::string metaFile = mBasePath + "/.meta";
         if (!fs::isDirectory(mBasePath)) {
+            // clang-format off
+            struct OnErrorDeleter {
+                OnErrorDeleter(const std::string& path) : mDeleter([path]() { fs::removeDirectory(path); }) {}
+                void success() { mDeleter = nullptr; }
+                ~OnErrorDeleter() noexcept { try { if(mDeleter) { mDeleter(); } } catch(...) {} }
+                std::function<void()> mDeleter;
+            };
+            // clang-format on
+
             fs::createDirectory(mBasePath);
+            OnErrorDeleter deleteOnError(mBasePath);
             std::ofstream meta(metaFile, std::ios::binary);
             if (!meta) {
                 throw Exception("Failed to write cache metadata: ", strerror(errno));
@@ -48,6 +58,10 @@ public:
             meta.write(reinterpret_cast<const char*>(&keyTypeHash), sizeof(std::size_t));
             meta.write(reinterpret_cast<const char*>(&valueTypeHash), sizeof(std::size_t));
             meta.write(reinterpret_cast<const char*>(&shardSize), sizeof(std::size_t));
+            if (!serialize()) {
+                throw Exception("Failed to create database ", mBasePath);
+            }
+            deleteOnError.success();
         } else {
             std::ifstream meta(metaFile, std::ios::binary);
             if (!meta) {
