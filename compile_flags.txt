@@ -1,4 +1,4 @@
--std=c++11
+-std=c++14
 --language=c++
 -Iinclude
 -Iexternal/cereal/include

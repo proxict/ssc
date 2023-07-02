@@ -143,19 +143,28 @@ public:
     bool serialize() const {
         bool serializedAll = true;
         for (std::size_t i = 0; i < TShardSize; ++i) {
-            const Shard& shard = mShards.at(i);
-            const auto shardFilename = getShardFilename(i);
-            if (fs::isFile(shardFilename) && !shard.isDirty()) {
-                continue;
-            }
+            try {
+                const Shard& shard = mShards.at(i);
+                const auto shardFilename = getShardFilename(i);
+                if (fs::isFile(shardFilename) && !shard.isDirty()) {
+                    continue;
+                }
 
-            std::ofstream shardFile(shardFilename, std::ios::binary);
-            if (!shardFile) {
+                fs::FileLock fsLock(getShardLockFilename(i));
+                if (!fsLock.lock(1ms)) {
+                    serializedAll = false;
+                    continue;
+                }
+
+                std::ofstream shardFile(shardFilename, std::ios::binary);
+                if (!shardFile) {
+                    serializedAll = false;
+                    continue;
+                }
+                shard.serialize(shardFile);
+            } catch (const Exception& e) {
                 serializedAll = false;
-                continue;
             }
-            shard.serialize(shardFile);
-            shardFile.close();
         }
         return serializedAll;
     }
@@ -163,14 +172,24 @@ public:
     bool deserialize(const DeserializationMode mode = DeserializationMode::OVERWRITE) {
         bool deserializedAll = true;
         for (std::size_t i = 0; i < TShardSize; ++i) {
-            const std::string shardFilename = getShardFilename(i);
-            std::ifstream shardFile(shardFilename, std::ios::binary);
-            if (!shardFile) {
+            try {
+                fs::FileLock fsLock(getShardLockFilename(i));
+                if (!fsLock.lock(1ms)) {
+                    deserializedAll = false;
+                    continue;
+                }
+
+                const std::string shardFilename = getShardFilename(i);
+                std::ifstream shardFile(shardFilename, std::ios::binary);
+                if (!shardFile) {
+                    deserializedAll = false;
+                    continue;
+                }
+                Shard& shard = mShards.at(i);
+                shard.deserialize(shardFile, mode);
+            } catch (const Exception& e) {
                 deserializedAll = false;
-                continue;
             }
-            Shard& shard = mShards.at(i);
-            shard.deserialize(shardFile, mode);
         }
         return deserializedAll;
     }
@@ -343,6 +362,10 @@ private:
 
     std::string getShardFilename(const std::size_t shardIndex) const {
         return mBasePath + ("/shard" + std::to_string(shardIndex));
+    }
+
+    std::string getShardLockFilename(const std::size_t shardIndex) const {
+        return mBasePath + ("/.shard" + std::to_string(shardIndex) + ".lock");
     }
 
     std::hash<TKey> mKeyHasher;
