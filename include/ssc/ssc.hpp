@@ -1,7 +1,7 @@
 #ifndef PROXICT_SSC_SSC_HPP_
 #define PROXICT_SSC_SSC_HPP_
 
-#include "ssc/Filesystem.hpp"
+#include "ssc/FileLock.hpp"
 
 #include <cereal/archives/binary.hpp>
 #include <cereal/archives/json.hpp>
@@ -13,8 +13,9 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
-#include <ctime>
+#include <cstring>
 #include <fstream>
+#include <string>
 #include <thread>
 #include <typeinfo>
 #include <unordered_map>
@@ -32,28 +33,28 @@ using TimePoint = std::chrono::time_point<Clock>;
 template <typename TKey, typename TValue, std::size_t TShardSize = 32>
 class Cache final {
 public:
-    explicit Cache(std::string basePath)
+    explicit Cache(std::filesystem::path basePath)
         : mBasePath(std::move(basePath)) {
         const std::size_t keyTypeHash = typeid(TKey).hash_code();
         const std::size_t valueTypeHash = typeid(TValue).hash_code();
         const std::size_t shardSize = TShardSize;
 
-        const std::string metaFile = mBasePath + "/.meta";
-        if (!fs::isDirectory(mBasePath)) {
+        const std::filesystem::path metaFile = mBasePath / ".meta";
+        if (!std::filesystem::is_directory(mBasePath)) {
             // clang-format off
             struct OnErrorDeleter {
-                OnErrorDeleter(const std::string& path) : mDeleter([path]() { fs::removeDirectory(path); }) {}
+                OnErrorDeleter(const std::filesystem::path& path) : mDeleter([path]() { std::filesystem::remove_all(path); }) {}
                 void success() { mDeleter = nullptr; }
                 ~OnErrorDeleter() noexcept { try { if(mDeleter) { mDeleter(); } } catch(...) {} }
                 std::function<void()> mDeleter;
             };
             // clang-format on
 
-            fs::createDirectory(mBasePath);
+            std::filesystem::create_directories(mBasePath);
             OnErrorDeleter deleteOnError(mBasePath);
             std::ofstream meta(metaFile, std::ios::binary);
             if (!meta) {
-                throw Exception("Failed to write cache metadata: ", strerror(errno));
+                throw Exception("Failed to write cache metadata: ", std::strerror(errno));
             }
             meta.write(reinterpret_cast<const char*>(&keyTypeHash), sizeof(std::size_t));
             meta.write(reinterpret_cast<const char*>(&valueTypeHash), sizeof(std::size_t));
@@ -65,7 +66,7 @@ public:
         } else {
             std::ifstream meta(metaFile, std::ios::binary);
             if (!meta) {
-                throw Exception("Failed to read cache metadata: ", strerror(errno));
+                throw Exception("Failed to read cache metadata: ", std::strerror(errno));
             }
             std::size_t storedKeyTypeHash = 0;
             std::size_t storedValueTypeHash = 0;
@@ -146,7 +147,7 @@ public:
             try {
                 const Shard& shard = mShards.at(i);
                 const auto shardFilename = getShardFilename(i);
-                if (fs::isFile(shardFilename) && !shard.isDirty()) {
+                if (std::filesystem::exists(shardFilename) && !shard.isDirty()) {
                     continue;
                 }
 
@@ -179,7 +180,7 @@ public:
                     continue;
                 }
 
-                const std::string shardFilename = getShardFilename(i);
+                const std::filesystem::path shardFilename = getShardFilename(i);
                 std::ifstream shardFile(shardFilename, std::ios::binary);
                 if (!shardFile) {
                     deserializedAll = false;
@@ -360,17 +361,17 @@ private:
 
     Shard& getShard(const TKey& key) { return mShards.at(getShardId(key)); }
 
-    std::string getShardFilename(const std::size_t shardIndex) const {
-        return mBasePath + ("/shard" + std::to_string(shardIndex));
+    std::filesystem::path getShardFilename(const std::size_t shardIndex) const {
+        return mBasePath / ("shard" + std::to_string(shardIndex));
     }
 
-    std::string getShardLockFilename(const std::size_t shardIndex) const {
-        return mBasePath + ("/.shard" + std::to_string(shardIndex) + ".lock");
+    std::filesystem::path getShardLockFilename(const std::size_t shardIndex) const {
+        return mBasePath / (".shard" + std::to_string(shardIndex) + ".lock");
     }
 
     std::hash<TKey> mKeyHasher;
     std::array<Shard, TShardSize> mShards;
-    std::string mBasePath;
+    std::filesystem::path mBasePath;
 };
 
 } // namespace ssc
