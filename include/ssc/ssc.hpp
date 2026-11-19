@@ -16,7 +16,6 @@
 #include <cstring>
 #include <fstream>
 #include <string>
-#include <thread>
 #include <typeinfo>
 #include <unordered_map>
 
