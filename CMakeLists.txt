@@ -12,6 +12,16 @@ set_property(TARGET ssc PROPERTY CXX_STANDARD_REQUIRED TRUE)
 set_property(TARGET ssc PROPERTY CXX_EXTENSIONS OFF)
 set_property(TARGET ssc PROPERTY POSITION_INDEPENDENT_CODE ON)
 
+include(FetchContent)
+
+set(SKIP_PERFORMANCE_COMPARISON ON CACHE BOOL "disable cereal performance comparison" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "disable cereal tests" FORCE)
+set(BUILD_SANDBOX OFF CACHE BOOL "disable cereal sandbox" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "disable cereal docs" FORCE)
+FetchContent_Declare(cereal GIT_REPOSITORY https://github.com/USCiLab/cereal.git
+                            GIT_TAG v1.3.2)
+FetchContent_MakeAvailable(cereal)
+
 target_compile_options(ssc INTERFACE
     -Wall
     -Wextra
@@ -26,8 +36,9 @@ target_compile_options(ssc INTERFACE
 
 target_include_directories(ssc
     INTERFACE include
-    INTERFACE external/cereal/include
 )
+
+target_link_libraries(ssc INTERFACE cereal)
 
 if (BUILD_TESTS)
     add_subdirectory(test)
